@@ -1,0 +1,99 @@
+site_name: Cypherantic
+site_author: "Dave Shawley"
+repo_name: "dave-shawley/cypherantic"
+repo_url: "https://github.com/dave-shawley/cypherantic"
+
+extra_css:
+  - stylesheets/extra.css
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.path
+    - navigation.tracking
+    - navigation.top
+    - toc.follow
+    - toc.integrate
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Toggle palette
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Toggle light mode
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.magiclink
+  - pymdownx.smartsymbols
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - sane_lists
+  - toc:
+      anchorlink: true
+      anchorlink_class: "toclink"
+      toc_depth: 3
+
+nav:
+  - Home: index.md
+  - features.md
+  - reference.md
+  - todo.md
+  - changelog.md
+
+plugins:
+  - autorefs
+  - mkdocstrings:
+      default_handler: python_xref
+      enable_inventory: true
+      handlers:
+        python_xref:
+          inventories:
+            - https://docs.pydantic.dev/latest/objects.inv
+            - https://docs.python.org/3/objects.inv
+          paths:
+            - src
+          options:
+            docstring_section_style: list
+            docstring_style: google
+            heading_level: 3
+            scoped_crossrefs: true
+            separate_signature: true
+            show_root_heading: true
+            show_root_full_path: true
+            show_signature: true
+            show_signature_annotations: true
+            show_source: false
+            show_symbol_type_heading: true
+            signature_crossrefs: true
+            unwrap_annotated: true
+  - search
+
+validation:
+  absolute_links: warn
+  anchors: warn
+  omitted_files: warn
+  unrecognized_links: warn

@@ -42,19 +42,59 @@ EdgeType = typing.TypeVar('EdgeType')
 
 
 class NodeConfig(typing.TypedDict, total=False):
+    """Configuration options for a node
+
+    Define a class attribute named `cypherantic_config` with a
+    dictionary to tell cypherantic how to handle a model. You can
+    use the [NodeModel][] base class for your node classes if you
+    prefer an object-oriented approach. You can also simply define
+    a class attribute with a dictionary to configure node handling.
+    """
+
     labels: typing.NotRequired[list[str]]
+    """Labels that apply ito the node"""
 
 
 class NodeModel(pydantic.BaseModel):
+    """Helper class to define a node model.
+
+    This class simply defines the `cyperantic_config` class attribute
+    which can customize the way nodes are created and retrieved from the
+    database. You are not required to use this class as a base class.
+    """
+
     cypherantic_config: typing.ClassVar[NodeConfig] = {}
+    """Configuration options for a node model"""
 
 
 class RelationshipConfig(typing.TypedDict, total=False):
+    """Configuration options for a relationship.
+
+    Use the keys from this dictionary to customize the way that
+    relationships are created and retrieved from the database.
+    Define a class attribute named `cypherantic_config` with a
+    dictionary to configure relationship handling. You can use
+    [RelationshipModel][] to define relationships in a more
+    object-oriented approach if you prefer.
+
+    By default, the relationship type matches the class name.
+    """
+
     rel_type: typing.NotRequired[str]
+    """Relationship type defaulting to the class name"""
 
 
 class RelationshipModel(pydantic.BaseModel):
+    """Helper class to define a relationship model.
+
+    This class simply defines the `cypherantic_config` class attribute
+    which can customize the way relationships are created and retrieved
+    from the database. You are not required to use this class as a base
+    class.
+    """
+
     cypherantic_config: typing.ClassVar[RelationshipConfig] = {}
+    """Configuration options for a relationship model"""
 
 
 @pydantic.dataclasses.dataclass(frozen=True)
@@ -71,6 +111,7 @@ class Relationship:
 def unwrap_node_as(
     model_cls: type[ModelType], node: neo4j.graph.Node | None
 ) -> ModelType:
+    """Helper function to unwrap a Neo4j node into a pydantic model or fail."""
     if node is None:
         raise InvalidValueError('No record to unwrap')
     return model_cls.model_validate(node)
@@ -79,6 +120,7 @@ def unwrap_node_as(
 async def unwrap_result_as_node(
     model_cls: type[ModelType], result: neo4j.AsyncResult
 ) -> ModelType:
+    """Helper function to unwrap a Neo4j result into a single model or fail."""
     record = await result.single()
     if record is None or len(record) == 0:
         raise InvalidValueError('Record is empty')
@@ -90,6 +132,20 @@ async def unwrap_result_as_node(
 async def create_node(
     session: SessionType, model: ModelType
 ) -> neo4j.graph.Node:
+    """Creates a node in the database.
+
+    This function creates a node in the database using the provided session
+    and model. It ensures that the node's labels and constraints are set
+    correctly and then creates the node with the specified properties.
+    Properties that are annotated with [cypherantic.Relationship][] are not
+    persisted since they represent edges. Use [create_relationship][] to
+    create relationships between nodes.
+
+    Raises:
+        InvalidValueError: If the provided session or model is invalid.
+        Neo4jError: If an error occurs while creating the node in the database.
+
+    """
     model_cls = type(model)
     config = typing.cast(
         'NodeConfig', getattr(model, 'cypherantic_config', {})
@@ -204,6 +260,33 @@ async def refresh_relationship(
     model: SourceNode,
     rel_property: str,
 ) -> None:
+    """Updates a relationship property from the database.
+
+    This function extracts relationship details from the type annotations
+    of the specified field. The field must be annotated with a
+    [cypherantic.Relationship][] instance and must be a sequence type
+    containing a single target type.
+
+    ```python
+        class MyModel(pydantic.BaseModel):
+            my_rel: typing.Annotated[
+                list[TargetNode],
+                cypherantic.Relationship(rel_type='MY_REL',
+                                         direction='INCOMING'),
+            ]
+    ```
+
+    Args:
+        session: The Neo4j session to use for the transaction.
+        model: The source node model instance.
+        rel_property: The name of the relationship property to refresh.
+
+    Raises:
+        CypheranticError: If the relationship refresh fails.
+        InvalidValueError: If the relationship property does not exist.
+        InvalidRelationshipError: If the relationship property is invalid.
+
+    """
     model_cls = type(model)
     try:
         field: pydantic.fields.FieldInfo = model_cls.model_fields[rel_property]
