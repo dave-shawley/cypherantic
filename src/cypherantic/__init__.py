@@ -1,5 +1,4 @@
 import inspect
-import json
 import logging
 import typing
 from collections import abc
@@ -7,6 +6,7 @@ from collections import abc
 import neo4j.graph
 import pydantic.dataclasses
 import pydantic.fields
+import pydantic_core
 
 _known_constraints: set[type[pydantic.BaseModel]] = set()
 
@@ -68,12 +68,85 @@ class Relationship:
     direction: typing.Literal['INCOMING', 'OUTGOING']
 
 
+@typing.overload
+def _convert_neo4j_types(
+    data: abc.Mapping[str, object],
+) -> dict[str, object]: ...
+
+
+@typing.overload
+def _convert_neo4j_types(
+    data: abc.Sequence[object],
+) -> list[object]: ...
+
+
+@typing.overload
+def _convert_neo4j_types(data: object) -> object: ...
+
+
+def _convert_neo4j_types(
+    data: abc.Mapping[str, object] | abc.Sequence[object] | object,
+) -> dict[str, object] | list[object] | object:
+    """Convert Neo4j-specific types to Python native types."""
+    if isinstance(data, abc.Mapping):
+        return {
+            key: _convert_neo4j_types(value) for key, value in data.items()
+        }
+    if isinstance(data, abc.Sequence) and not isinstance(data, str):
+        return [_convert_neo4j_types(item) for item in data]
+    if hasattr(data, 'to_native'):  # Neo4j DateTime, Date, Time objects
+        return typing.cast('object', data.to_native())
+    return data
+
+
+def _prepare_node_data(
+    model_cls: type[pydantic.BaseModel], node_data: dict[str, typing.Any]
+) -> dict[str, typing.Any]:
+    """Prepare node data for model validation by handling relationship fields.
+
+    Relationship fields are not stored as node properties in Neo4j, so we need
+    to provide default values for them to avoid validation errors.
+    """
+    prepared_data = node_data.copy()
+
+    # Check each field in the model
+    for field_name, field_info in model_cls.model_fields.items():
+        # Skip fields that already have data
+        if field_name in prepared_data:
+            continue
+
+        # Check if this is a relationship field
+        is_relationship = any(
+            isinstance(md, Relationship) for md in field_info.metadata
+        )
+
+        if is_relationship:
+            # Use the field's default if available, otherwise None
+            prepared_data[field_name] = field_info.get_default(
+                call_default_factory=True, validated_data=prepared_data
+            )
+        elif (
+            field_info.is_required()
+            and field_info.default is pydantic_core.PydanticUndefined
+            and not field_info.default_factory
+        ):
+            # It is challenging to tell whether the field can be None
+            # based on the available information, try inserting None here.
+            # If our assumption is wrong, then model validation will fail.
+            prepared_data[field_name] = None
+
+    return prepared_data
+
+
 def unwrap_node_as(
     model_cls: type[ModelType], node: neo4j.graph.Node | None
 ) -> ModelType:
     if node is None:
         raise InvalidValueError('No record to unwrap')
-    return model_cls.model_validate(node)
+    # Convert Neo4j types and prepare relationship fields
+    node_data = _convert_neo4j_types(dict(node))
+    prepared_data = _prepare_node_data(model_cls, node_data)
+    return model_cls.model_validate(prepared_data)
 
 
 async def unwrap_result_as_node(
@@ -103,7 +176,9 @@ async def create_node(
         await _ensure_constraints(session, model_cls, node_labels)
 
     properties: dict[str, object] = {}
-    for field_name, field_value in model.model_dump(mode='python').items():
+    for field_name, field_value in model.model_dump(
+        mode='python', exclude_none=True
+    ).items():
         for md in model_cls.model_fields[field_name].metadata:
             if isinstance(md, Relationship):
                 break
@@ -350,7 +425,7 @@ async def _instrumented_run(
 ) -> neo4j.AsyncResult:
     logger = logging.getLogger('cypherantic')
     logger.debug('Executing query: %s', query)
-    logger.debug('With parameters: %s', json.dumps(parameters, indent=None))
+    logger.debug('With parameters: %r', parameters)
     return await session.run(query, **parameters)  # type: ignore[arg-type]
 
 
