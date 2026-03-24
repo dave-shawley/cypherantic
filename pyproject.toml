@@ -19,7 +19,6 @@ classifiers = [
 dependencies = [
   "neo4j~=6.0",
   "pydantic~=2.12",
-  "typing>=3.10.0.0",
 ]
 description = "Pydantic meet Cypher, Cypher meet Pydantic."
 license = 'BSD-3-Clause'
